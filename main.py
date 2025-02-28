@@ -146,10 +146,20 @@ class Executor:
         if err != '':
             raise Exception(err)
         if out == '':
-            compute_units = 0
+            return 0
         else:
-            compute_units = out.split('|')[1].strip()
-        return compute_units
+            return out.split('|')[1].strip()
+
+    def fetch_instance_invocation_count(self, instance_id, latest_time, check_interval, chute_id):
+        pod_name = self.chutes_audit_host['pod_name']
+        command = f'sudo docker exec {pod_name} psql -U user chutes_audit -c \"SELECT instance_id, count(*) FROM invocations WHERE started_at > \'{latest_time}\'::TIMESTAMP - INTERVAL \'{check_interval}\' AND error_message IS NULL AND miner_uid={self.miner_uid} AND instance_id=\'{instance_id}\' AND chute_id=\'{chute_id}\' GROUP BY instance_id, chute_id;\" | grep {instance_id}'
+        (err, out) = self.execute_ssh_command(self.chutes_audit_host['host_ip'], self.chutes_audit_host['username'], command)
+        if err != '':
+            raise Exception(err)
+        if out == '':
+            return 0
+        else:
+            return out.split('|')[1].strip()
 
     def fetch_instance_deleted_at(self, instance_id):
         pod_name = self.primary_host['pod_name']
@@ -187,10 +197,16 @@ class Executor:
                 compute_units_1_hour = self.fetch_instance_chute_compute_units(instance_id, self.latest_time, '1 hour', chute_id)
                 compute_units_1_day = self.fetch_instance_chute_compute_units(instance_id, self.latest_time, '1 day', chute_id)
                 compute_units_7_days = self.fetch_instance_chute_compute_units(instance_id, self.latest_time, '7 days', chute_id)
+                invocation_count_1_hour = self.fetch_instance_invocation_count(instance_id, self.latest_time, '1 hour', chute_id)
+                invocation_count_1_day = self.fetch_instance_invocation_count(instance_id, self.latest_time, '1 day', chute_id)
+                invocation_count_7_days = self.fetch_instance_invocation_count(instance_id, self.latest_time, '7 days', chute_id)
                 self.instances_chutes_compute_units[instance_id] = {
                   "compute_units_1_hour": compute_units_1_hour,
                   "compute_units_1_day": compute_units_1_day,
                   "compute_units_7_days": compute_units_7_days,
+                  "invocation_count_1_hour": invocation_count_1_hour,
+                  "invocation_count_1_day": invocation_count_1_day,
+                  "invocation_count_7_days": invocation_count_7_days,
                   "host_ip": host_ip,
                   "gpu_count": gpu_count,
                   "deployment_id": deployment_id,
@@ -226,7 +242,7 @@ class Executor:
         print(t.get_string(sortby="Active"))
 
     def print_hosts_chutes_compute_units(self):
-        t = PrettyTable(['Host IP', 'GPU Type', 'GPU Count', 'Instace ID', 'Chute ID', 'Deployment ID', 'Running Time', 'End Time', 'Compute Units 1 hour', 'Compute Units 1 day', 'Compute Units 7 days'])
+        t = PrettyTable(['Host IP', 'GPU Type', 'GPU Count', 'Instace ID', 'Chute ID', 'Deployment ID', 'Running Time', 'Active', 'Units 1h', 'Units 1d', 'Units 7d', 'Invocations 1h', 'Invocations 1d', 'Invocations 7d'])
         hosts_compute_units = {}
         for instance, compute_units in self.instances_chutes_compute_units.items():
             t.add_row([
@@ -236,13 +252,16 @@ class Executor:
                 instance,
                 compute_units['chute_id'],
                 compute_units['deployment_id'],
-                datetime.timedelta(seconds = time.time() - time.mktime(time.strptime(compute_units['started_at'], "%Y-%m-%d %H:%M:%S.%f+00"))),
-                str(compute_units['deleted_at']),
-                compute_units['compute_units_1_hour'],
-                compute_units['compute_units_1_day'],
-                compute_units['compute_units_7_days']
+                str(datetime.timedelta(seconds = time.time() - time.mktime(time.strptime(compute_units['started_at'], "%Y-%m-%d %H:%M:%S.%f+00")))).split('.')[0],
+                False if compute_units['deleted_at'] != 0 else True,
+                str(compute_units['compute_units_1_hour']).split('.')[0],
+                str(compute_units['compute_units_1_day']).split('.')[0],
+                str(compute_units['compute_units_7_days']).split('.')[0],
+                compute_units['invocation_count_1_hour'],
+                compute_units['invocation_count_1_day'],
+                compute_units['invocation_count_7_days']
             ])
-        print(t.get_string(sortby="End Time"))
+        print(t.get_string(sortby="Active"))
 
 
 def main():
