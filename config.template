@@ -1,0 +1,14 @@
+{
+  "hotkey": "{miner_hotkey}",
+  "miner_uid": {miner_uid},
+  "primary_host": {
+    "host_ip": "{primary_host_ip}",
+    "username": "test",
+    "pod_name": "{postgres_pod_name}"
+  },
+  "chutes_audit": {
+    "host_ip": "{chutes_audit_host_ip}",
+    "username": "test",
+    "pod_name": "{chutes_audit_pod_name}"
+  }
+}
