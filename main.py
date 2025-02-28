@@ -55,7 +55,7 @@ class Sqlite:
         records = []
         conn = sqlite3.connect(self.db_name)
         c = conn.cursor()
-        c.execute('''SELECT * FROM ''' + self.deployments_table + 
+        c.execute('''SELECT * FROM ''' + self.deployments_table +
                 ''' WHERE INSTANCE_ID = ? AND DEPLOYMENT_ID = ? AND CHUTE_ID = ? AND HOST_IP = ? AND GPU_TYPE = ? ;''', 
                 (instance_id, deployment_id, chute_id, host_ip, gpu_type))
         for row in c:
@@ -69,7 +69,7 @@ class Sqlite:
         if len(records) == 0:
             conn = sqlite3.connect(self.db_name)
             c = conn.cursor()
-            c.execute('''INSERT OR IGNORE INTO ''' + self.deployments_table + 
+            c.execute('''INSERT OR IGNORE INTO ''' + self.deployments_table +
                     ''' (INSTANCE_ID, DEPLOYMENT_ID, CHUTE_ID, HOST_IP, GPU_TYPE, CREATED_AT, GPU_COUNT) VALUES (?, ?, ?, ?, ?, ?, ?);''',
                     (instance_id, deployment_id, chute_id, host_ip, gpu_type, created_at, gpu_count))
             conn.commit()
@@ -172,7 +172,7 @@ class Executor:
             return False
         else:
             return True if len(out.strip()) > 0 else False
-        
+
     def fetch_instances_chutes_compute_units(self):
         self.instances_chutes_compute_units = {}
         for record in self.sql.records:
@@ -263,7 +263,7 @@ def main():
 
     sql = Sqlite()
     sql.init_db()
-            
+
     executor = Executor(config, sql)
     executor.insert_into_sqlite()
     sql.query_records()
