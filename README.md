@@ -17,7 +17,7 @@
 
 - python3 main.py -c config.template
 
-Local sqlite is used to store the host of instance running history, so if you need to
+Local sqlite is used to store running history of instances, so if you need to
 watch a full history you should run above command with a `while` loop with proper interval
 you want.
 
