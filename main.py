@@ -149,16 +149,16 @@ class Executor:
         latest_time = out.strip()
         self.latest_time = latest_time
 
-    def fetch_instance_chute_compute_units(self, instance_id, latest_time, check_interval):
+    def fetch_instance_compute(self, instance_id, latest_time, check_interval):
         pod_name = self.chutes_audit_host['pod_name']
-        command = f'sudo docker exec {pod_name} psql -U user chutes_audit -c \"SELECT * FROM (SELECT i.miner_hotkey, SUM(i.compute_multiplier * EXTRACT(EPOCH FROM (i.completed_at - i.started_at))) AS compute_units, i.instance_id FROM invocations i WHERE i.started_at > \'{latest_time}\'::TIMESTAMP - INTERVAL \'{check_interval}\' AND i.error_message IS NULL AND miner_uid={self.miner_uid} AND instance_id=\'{instance_id}\' GROUP BY i.miner_hotkey, i.instance_id HAVING SUM(i.compute_multiplier * EXTRACT(EPOCH FROM (i.completed_at - i.started_at))) > 0 ORDER BY compute_units DESC) AS A JOIN (SELECT instance_id,compute_multiplier, SUM(EXTRACT(EPOCH FROM (completed_at - started_at))) from invocations WHERE started_at > \'{latest_time}\'::TIMESTAMP - INTERVAL \'{check_interval}\' AND error_message IS NULL group by instance_id,compute_multiplier ) as B on A.instance_id = B.instance_id;\" | grep {self.hotkey}'
+        command = f'sudo docker exec {pod_name} psql -U user chutes_audit -c \"WITH computation_rates AS (SELECT chute_id, percentile_cont(0.5) WITHIN GROUP (ORDER BY extract(epoch from completed_at - started_at) / (metrics->>\'steps\')::float) as median_step_time, percentile_cont(0.5) WITHIN GROUP (ORDER BY extract(epoch from completed_at - started_at) / ((metrics->>\'it\')::float + (metrics->>\'ot\')::float)) as median_token_time FROM invocations WHERE ((metrics->>\'steps\' IS NOT NULL and (metrics->>\'steps\')::float > 0) OR (metrics->>\'it\' IS NOT NULL AND metrics->>\'ot\' IS NOT NULL AND (metrics->>\'ot\')::float > 0 AND (metrics->>\'it\')::float > 0)) AND started_at >= \'{latest_time}\'::TIMESTAMP - INTERVAL \'{check_interval}\' AND miner_uid = {self.miner_uid} AND instance_id = \'{instance_id}\' GROUP BY chute_id) SELECT i.miner_hotkey, COUNT(*) as invocation_count, COUNT(DISTINCT(i.chute_id)) AS unique_chute_count, COUNT(CASE WHEN i.bounty > 0 THEN 1 END) AS bounty_count, sum( i.bounty + i.compute_multiplier * CASE WHEN i.metrics->>\'steps\' IS NOT NULL AND r.median_step_time IS NOT NULL THEN (i.metrics->>\'steps\')::float * r.median_step_time WHEN i.metrics->>\'it\' IS NOT NULL AND i.metrics->>\'ot\' IS NOT NULL AND r.median_token_time IS NOT NULL THEN ((i.metrics->>\'it\')::float + (i.metrics->>\'ot\')::float) * r.median_token_time ELSE EXTRACT(EPOCH FROM (i.completed_at - i.started_at)) END ) AS compute_units  FROM invocations i  LEFT JOIN computation_rates r ON i.chute_id = r.chute_id  WHERE i.started_at > \'{latest_time}\'::TIMESTAMP - INTERVAL \'{check_interval}\'  AND i.error_message IS NULL  AND i.miner_uid =42 AND i.instance_id = \'{instance_id}\' AND i.completed_at IS NOT NULL GROUP BY i.miner_hotkey ORDER BY compute_units DESC;\" | grep {self.hotkey}'
         (err, out) = self.execute_ssh_command(self.chutes_audit_host['host_ip'], self.chutes_audit_host['username'], command)
         if err != '':
             raise Exception(err)
         if out == '':
             return(0, 0, 0)
         else:
-            return(out.split('|')[1].strip(), out.split('|')[4].strip(), out.split('|')[5].strip())
+            return(out.split('|')[1].strip(), out.split('|')[3].strip(), out.split('|')[4].strip())
 
     def fetch_instance_invocation_count(self, instance_id, latest_time, check_interval):
         pod_name = self.chutes_audit_host['pod_name']
@@ -201,22 +201,18 @@ class Executor:
         for record in self.sql.records:
             instance_id = record[0]
             if self.instances_chutes_compute_units.get(instance_id) is None:
-                (compute_units_1_hour, multiplier, elapsed_1_hour) = self.fetch_instance_chute_compute_units(instance_id, self.latest_time, '1 hour')
-                (compute_units_1_day, multiplier, elapsed_1_day) = self.fetch_instance_chute_compute_units(instance_id, self.latest_time, '1 day')
-                (compute_units_7_day, multiplier, elapsed_7_days) = self.fetch_instance_chute_compute_units(instance_id, self.latest_time, '7 days')
-                invocation_count_1_hour = self.fetch_instance_invocation_count(instance_id, self.latest_time, '1 hour')
-                invocation_count_1_day = self.fetch_instance_invocation_count(instance_id, self.latest_time, '1 day')
-                invocation_count_7_days = self.fetch_instance_invocation_count(instance_id, self.latest_time, '7 days')
+                (invocation_count_1_hour, bounty_count_1_hour, compute_units_1_hour) = self.fetch_instance_compute(instance_id, self.latest_time, '1 hour')
+                (invocation_count_1_day, bounty_count_1_day, compute_units_1_day) = self.fetch_instance_compute(instance_id, self.latest_time, '1 day')
+                (invocation_count_7_days, bounty_count_7_days, compute_units_7_days) = self.fetch_instance_compute(instance_id, self.latest_time, '7 days')
                 deleted_at = self.fetch_instance_deleted_at(instance_id)
                 self.update_instance_deleted_at(deleted_at, instance_id)
                 self.instances_chutes_compute_units[instance_id] = {
                   "compute_units_1_hour": compute_units_1_hour,
                   "compute_units_1_day": compute_units_1_day,
-                  "compute_units_7_days": compute_units_7_day,
-                  "multiplier": multiplier,
-                  "elapsed_1_hour": elapsed_1_hour,
-                  "elapsed_1_day": elapsed_1_day,
-                  "elapsed_7_days": elapsed_7_days,
+                  "compute_units_7_days": compute_units_7_days,
+                  "bounty_count_1_hour": bounty_count_1_hour,
+                  "bounty_count_1_day": bounty_count_1_day,
+                  "bounty_count_7_days": bounty_count_7_days,
                   "invocation_count_1_hour": invocation_count_1_hour,
                   "invocation_count_1_day": invocation_count_1_day,
                   "invocation_count_7_days": invocation_count_7_days,
@@ -255,7 +251,7 @@ class Executor:
         print(t.get_string(sortby="Active"))
 
     def print_hosts_chutes_compute_units(self):
-        t = PrettyTable(['Host IP', 'GPU Type', 'GPU Count', 'Instace ID', 'Chute ID', 'Deployment ID', 'Running Time', 'Active', 'Units 1h', 'Units 1d', 'Units 7d', 'Invocations 1h', 'Invocations 1d', 'Invocations 7d', 'multiplier', 'Elapsed 1h', 'Elapsed 1d', 'Elapsed 7d'])
+        t = PrettyTable(['Host IP', 'GPU Type', 'GPU Count', 'Instace ID', 'Chute ID', 'Deployment ID', 'Running Time', 'Active', 'Compute Units 1h', 'Compute Units 1d', 'Compute Units 7d', 'Invocation Count 1h', 'Invocation Count 1d', 'Invocation Count 7d', 'Bounty Count 7d'])
         hosts_compute_units = {}
         for instance, compute_units in self.instances_chutes_compute_units.items():
             t.add_row([
@@ -273,10 +269,7 @@ class Executor:
                 compute_units['invocation_count_1_hour'],
                 compute_units['invocation_count_1_day'],
                 compute_units['invocation_count_7_days'],
-                compute_units['multiplier'],
-                compute_units['elapsed_1_hour'],
-                compute_units['elapsed_1_day'],
-                compute_units['elapsed_7_days']
+                compute_units['bounty_count_7_days']
             ])
         print(t.get_string(sortby="Active"))
 
