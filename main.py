@@ -9,6 +9,7 @@ import time
 import traceback
 import requests
 import datetime
+import asyncio
 
 from prettytable import PrettyTable
 from sqlite_op import *
@@ -175,36 +176,37 @@ class Executor:
         else:
             return True if len(out.strip()) > 0 else False
 
-    def fetch_instances_chutes_compute_units(self):
-        self.instances_chutes_compute_units = {}
-        for record in self.records:
-            instance_id = record[0]
-            if self.instances_chutes_compute_units.get(instance_id) is None:
-                (invocation_count_1_hour, bounty_count_1_hour, compute_units_1_hour) = self.fetch_instance_compute(instance_id, self.latest_time, '1 hour')
-                (invocation_count_1_day, bounty_count_1_day, compute_units_1_day) = self.fetch_instance_compute(instance_id, self.latest_time, '1 day')
-                (invocation_count_7_days, bounty_count_7_days, compute_units_7_days) = self.fetch_instance_compute(instance_id, self.latest_time, '7 days')
-                deleted_at = self.fetch_instance_deleted_at(instance_id)
-                self.update_instance_deleted_at(deleted_at, instance_id)
-                self.instances_chutes_compute_units[instance_id] = {
-                  "compute_units_1_hour": compute_units_1_hour,
-                  "compute_units_1_day": compute_units_1_day,
-                  "compute_units_7_days": compute_units_7_days,
-                  "bounty_count_1_hour": bounty_count_1_hour,
-                  "bounty_count_1_day": bounty_count_1_day,
-                  "bounty_count_7_days": bounty_count_7_days,
-                  "invocation_count_1_hour": invocation_count_1_hour,
-                  "invocation_count_1_day": invocation_count_1_day,
-                  "invocation_count_7_days": invocation_count_7_days,
-                  "deployment_id": record[1],
-                  "chute_id": record[2],
-                  "host_ip": record[3],
-                  "model_short_ref": record[4],
-                  "started_at": record[5],
-                  "gpu_count": record[6],
-                  "deleted_at": deleted_at
-                }
-        print(self.instances_chutes_compute_units)
+    async def fetch_instance_chutes_compute_units(self, record):
+        instance_id = record[0]
+        if self.instances_chutes_compute_units.get(instance_id) is None:
+            (invocation_count_1_hour, bounty_count_1_hour, compute_units_1_hour) = self.fetch_instance_compute(instance_id, self.latest_time, '1 hour')
+            (invocation_count_1_day, bounty_count_1_day, compute_units_1_day) = self.fetch_instance_compute(instance_id, self.latest_time, '1 day')
+            (invocation_count_7_days, bounty_count_7_days, compute_units_7_days) = self.fetch_instance_compute(instance_id, self.latest_time, '7 days')
+            deleted_at = self.fetch_instance_deleted_at(instance_id)
+            self.update_instance_deleted_at(deleted_at, instance_id)
+            self.instances_chutes_compute_units[instance_id] = {
+                "compute_units_1_hour": compute_units_1_hour,
+                "compute_units_1_day": compute_units_1_day,
+                "compute_units_7_days": compute_units_7_days,
+                "bounty_count_1_hour": bounty_count_1_hour,
+                "bounty_count_1_day": bounty_count_1_day,
+                "bounty_count_7_days": bounty_count_7_days,
+                "invocation_count_1_hour": invocation_count_1_hour,
+                "invocation_count_1_day": invocation_count_1_day,
+                "invocation_count_7_days": invocation_count_7_days,
+                "deployment_id": record[1],
+                "chute_id": record[2],
+                "host_ip": record[3],
+                "model_short_ref": record[4],
+                "started_at": record[5],
+                "gpu_count": record[6],
+                "deleted_at": deleted_at
+            }
 
+    async def fetch_instances_chutes_compute_units(self):
+        self.instances_chutes_compute_units = {}
+        tasks = [self.fetch_instance_chutes_compute_units(record) for record in self.records]
+        await asyncio.gather(*tasks)
 
     def print_hosts_compute_units(self):
         t = PrettyTable(['Host IP', 'Active', 'GPU Type', 'Compute Units 1 hour', 'Compute Units 1 day', 'Compute Units 7 days'])
@@ -278,7 +280,7 @@ def main():
     executor.insert_instances()
     executor.fetch_all_active_instances()
     executor.fetch_audit_latest_time()
-    executor.fetch_instances_chutes_compute_units()
+    asyncio.run(executor.fetch_instances_chutes_compute_units())
 
     instance_db.close_connection()
 
