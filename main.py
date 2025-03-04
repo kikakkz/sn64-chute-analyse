@@ -10,8 +10,8 @@ import traceback
 import requests
 import datetime
 import sqlite3
-from prettytable import PrettyTable
 
+from prettytable import PrettyTable
 
 class Config:
     def __init__(self, config):
@@ -34,31 +34,42 @@ class Sqlite:
     def __init__(self):
         self.db_name = "chutes_deployments.db"
         self.deployments_table = "deployments"
-        self.records = []
 
     def init_db(self):
+        sql = f'''
+            CREATE TABLE IF NOT EXISTS {self.deployments_table}
+            (
+            INSTANCE_ID CHAR(50) NOT NULL,
+            DEPLOYMENT_ID CHAR(50) NOT NULL,
+            CHUTE_ID CHAR(50) NOT NULL,
+            HOST_IP CHAR(50) NOT NULL,
+            GPU_TYPE CHAR(50) NOT NULL,
+            CREATED_AT CHAR(50) NOT NULL,
+            GPU_COUNT INT NOT NULL,
+            DELETED_AT CHAR(50) DEFAULT 0
+            );
+        '''
         conn = sqlite3.connect(self.db_name)
         c = conn.cursor()
-        c.execute('''CREATE TABLE IF NOT EXISTS ''' + self.deployments_table + ''' (
-                INSTANCE_ID CHAR(50) NOT NULL,
-                DEPLOYMENT_ID CHAR(50) NOT NULL,
-                CHUTE_ID CHAR(50) NOT NULL,
-                HOST_IP CHAR(50) NOT NULL,
-                GPU_TYPE CHAR(50) NOT NULL,
-                CREATED_AT CHAR(50) NOT NULL,
-                GPU_COUNT INT NOT NULL,
-                DELETED_AT CHAR(50) DEFAULT 0
-            );''')
+        c.execute(sql)
         conn.commit()
         conn.close()
 
     def query_record(self, instance_id, deployment_id, chute_id, host_ip, gpu_type):
         records = []
+        sql = f'''
+            SELECT * FROM {self.deployments_table}
+            WHERE INSTANCE_ID = ?
+            AND DEPLOYMENT_ID = ?
+            AND CHUTE_ID = ?
+            AND HOST_IP = ?
+            AND GPU_TYPE = ?
+            ;
+        '''
+
         conn = sqlite3.connect(self.db_name)
         c = conn.cursor()
-        c.execute('''SELECT * FROM ''' + self.deployments_table +
-                ''' WHERE INSTANCE_ID = ? AND DEPLOYMENT_ID = ? AND CHUTE_ID = ? AND HOST_IP = ? AND GPU_TYPE = ? ;''', 
-                (instance_id, deployment_id, chute_id, host_ip, gpu_type))
+        c.execute(sql, (instance_id, deployment_id, chute_id, host_ip, gpu_type))
         for row in c:
             records.append(row)
         conn.close()
@@ -68,28 +79,47 @@ class Sqlite:
     def insert_into_db(self, instance_id, deployment_id, chute_id, host_ip, gpu_type, created_at, gpu_count):
         records = self.query_record(instance_id, deployment_id, chute_id, host_ip, gpu_type)
         if len(records) == 0:
+            sql = f'''
+                INSERT OR IGNORE INTO {self.deployments_table}
+                (
+                INSTANCE_ID,
+                DEPLOYMENT_ID,
+                CHUTE_ID,
+                HOST_IP,
+                GPU_TYPE,
+                CREATED_AT,
+                GPU_COUNT
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?);
+            '''
             conn = sqlite3.connect(self.db_name)
             c = conn.cursor()
-            c.execute('''INSERT OR IGNORE INTO ''' + self.deployments_table +
-                    ''' (INSTANCE_ID, DEPLOYMENT_ID, CHUTE_ID, HOST_IP, GPU_TYPE, CREATED_AT, GPU_COUNT) VALUES (?, ?, ?, ?, ?, ?, ?);''',
-                    (instance_id, deployment_id, chute_id, host_ip, gpu_type, created_at, gpu_count))
+            c.execute(sql, (instance_id, deployment_id, chute_id, host_ip, gpu_type, created_at, gpu_count))
             conn.commit()
             conn.close()
 
     def update_deployment_deleted_at(self, deleted_at, instance_id):
+        sql = f'''
+            UPDATE {self.deployments_table}
+            SET DELETED_AT = ?
+            WHERE INSTANCE_ID = ?
+            ;
+        '''
         conn = sqlite3.connect(self.db_name)
         c = conn.cursor()
-        c.execute('''UPDATE ''' + self.deployments_table +
-                ''' SET DELETED_AT = ? WHERE INSTANCE_ID = ?;''',
-                (deleted_at, instance_id))
+        c.execute(sql,(deleted_at, instance_id))
         conn.commit()
         conn.close()
 
     def query_records(self):
+        sql = f'''
+            SELECT * FROM {self.deployments_table}
+            WHERE DELETED_AT=0 ORDER BY CREATED_AT DESC;
+        '''
         self.records = []
         conn = sqlite3.connect(self.db_name)
         c = conn.cursor()
-        c.execute('''SELECT * FROM ''' + self.deployments_table + ''' WHERE DELETED_AT=0 ORDER BY CREATED_AT DESC;''')
+        c.execute(sql)
         for row in c:
             self.records.append(row)
         conn.close()
@@ -122,7 +152,13 @@ class Executor:
 
     def fetch_deployments_from_k8s(self):
         pod_name = self.primary_host['pod_name']
-        command = f'microk8s kubectl exec -n {pod_name} -- psql -U chutes chutes -c "select instance_id,tmp.deployment_id,chute_id,host,model_short_ref,created_at,gpu_count from (select count(*) as gpu_count,deployment_id,model_short_ref from gpus group by deployment_id,model_short_ref) AS tmp JOIN deployments as d on tmp.deployment_id = d.deployment_id;" | grep \'-\' | grep -v \'\\-\\-\' '
+        command = f'''
+            microk8s kubectl exec -n {pod_name} -- psql -U chutes chutes -c \
+            \"select instance_id, tmp.deployment_id, chute_id, host, model_short_ref, created_at, gpu_count from \
+            (select count(*) as gpu_count, deployment_id, model_short_ref from gpus group by deployment_id, model_short_ref) AS tmp \
+            JOIN deployments as d \
+            on tmp.deployment_id = d.deployment_id;\" | grep \'-\' | grep -v \'\\-\\-\'
+        '''
         return self.execute_ssh_command(self.primary_host['host_ip'], self.primary_host['username'], command)
 
     def insert_into_sqlite(self):
@@ -151,7 +187,35 @@ class Executor:
 
     def fetch_instance_compute(self, instance_id, latest_time, check_interval):
         pod_name = self.chutes_audit_host['pod_name']
-        command = f'sudo docker exec {pod_name} psql -U user chutes_audit -c \"WITH computation_rates AS (SELECT chute_id, percentile_cont(0.5) WITHIN GROUP (ORDER BY extract(epoch from completed_at - started_at) / (metrics->>\'steps\')::float) as median_step_time, percentile_cont(0.5) WITHIN GROUP (ORDER BY extract(epoch from completed_at - started_at) / ((metrics->>\'it\')::float + (metrics->>\'ot\')::float)) as median_token_time FROM invocations WHERE ((metrics->>\'steps\' IS NOT NULL and (metrics->>\'steps\')::float > 0) OR (metrics->>\'it\' IS NOT NULL AND metrics->>\'ot\' IS NOT NULL AND (metrics->>\'ot\')::float > 0 AND (metrics->>\'it\')::float > 0)) AND started_at >= \'{latest_time}\'::TIMESTAMP - INTERVAL \'{check_interval}\' AND miner_uid = {self.miner_uid} AND instance_id = \'{instance_id}\' GROUP BY chute_id) SELECT i.miner_hotkey, COUNT(*) as invocation_count, COUNT(DISTINCT(i.chute_id)) AS unique_chute_count, COUNT(CASE WHEN i.bounty > 0 THEN 1 END) AS bounty_count, sum( i.bounty + i.compute_multiplier * CASE WHEN i.metrics->>\'steps\' IS NOT NULL AND r.median_step_time IS NOT NULL THEN (i.metrics->>\'steps\')::float * r.median_step_time WHEN i.metrics->>\'it\' IS NOT NULL AND i.metrics->>\'ot\' IS NOT NULL AND r.median_token_time IS NOT NULL THEN ((i.metrics->>\'it\')::float + (i.metrics->>\'ot\')::float) * r.median_token_time ELSE EXTRACT(EPOCH FROM (i.completed_at - i.started_at)) END ) AS compute_units  FROM invocations i  LEFT JOIN computation_rates r ON i.chute_id = r.chute_id  WHERE i.started_at > \'{latest_time}\'::TIMESTAMP - INTERVAL \'{check_interval}\'  AND i.error_message IS NULL  AND i.miner_uid = {self.miner_uid} AND i.instance_id = \'{instance_id}\' AND i.completed_at IS NOT NULL GROUP BY i.miner_hotkey ORDER BY compute_units DESC;\" | grep {self.hotkey}'
+        command = f'''sudo docker exec {pod_name} psql -U user chutes_audit -c \
+            \"WITH computation_rates AS (SELECT chute_id, percentile_cont(0.5) WITHIN GROUP \
+            (ORDER BY extract(epoch from completed_at - started_at) / (metrics->>\'steps\')::float) as median_step_time, \
+            percentile_cont(0.5) WITHIN GROUP (ORDER BY extract(epoch from completed_at - started_at) / ((metrics->>\'it\')::float + (metrics->>\'ot\')::float)) as median_token_time \
+            FROM invocations \
+            WHERE ((metrics->>\'steps\' IS NOT NULL and (metrics->>\'steps\')::float > 0) \
+                OR (metrics->>\'it\' IS NOT NULL AND metrics->>\'ot\' IS NOT NULL \
+                AND (metrics->>\'ot\')::float > 0 \
+                AND (metrics->>\'it\')::float > 0)) \
+                AND started_at >= \'{latest_time}\'::TIMESTAMP - INTERVAL \'{check_interval}\' \
+                AND miner_uid = {self.miner_uid} \
+                AND instance_id = \'{instance_id}\' \
+                GROUP BY chute_id) \
+            SELECT i.miner_hotkey, COUNT(*) as invocation_count, COUNT(DISTINCT(i.chute_id)) AS unique_chute_count, \
+                COUNT(CASE WHEN i.bounty > 0 THEN 1 END) AS bounty_count, \
+                sum( i.bounty + i.compute_multiplier * CASE WHEN i.metrics->>\'steps\' IS NOT NULL \
+                AND r.median_step_time IS NOT NULL THEN (i.metrics->>\'steps\')::float * r.median_step_time WHEN i.metrics->>\'it\' IS NOT NULL \
+                AND i.metrics->>\'ot\' IS NOT NULL AND r.median_token_time IS NOT NULL \
+                    THEN ((i.metrics->>\'it\')::float + (i.metrics->>\'ot\')::float) * r.median_token_time \
+                    ELSE EXTRACT(EPOCH FROM (i.completed_at - i.started_at)) END ) AS compute_units  FROM invocations i \
+                LEFT JOIN computation_rates r \
+                    ON i.chute_id = r.chute_id \
+                    WHERE i.started_at > \'{latest_time}\'::TIMESTAMP - INTERVAL \'{check_interval}\' \
+                    AND i.error_message IS NULL \
+                    AND i.miner_uid = {self.miner_uid} \
+                    AND i.instance_id = \'{instance_id}\' \
+                    AND i.completed_at IS NOT NULL \
+                    GROUP BY i.miner_hotkey \
+                    ORDER BY compute_units DESC;\" | grep {self.hotkey}'''
         (err, out) = self.execute_ssh_command(self.chutes_audit_host['host_ip'], self.chutes_audit_host['username'], command)
         if err != '':
             raise Exception(err)
@@ -274,16 +338,15 @@ class Executor:
         print(t.get_string(sortby="Active"))
 
 
-def main():
-    parser = argparse.ArgumentParser(
-        prog='chutes',
-        description='chute deployment analyse',
-        epilog='Copyright(r), 2025'
-    )
-
-    parser.add_argument('-c', '--config', required=True)
-
+def get_cli_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser()
+    parser.add_argument('-c', '--config', help="config which contains your miner hotkey, miner uid and machine info", required=True)
     args = parser.parse_args()
+    return args
+
+
+def main():
+    args: argparse.Namespace = get_cli_args()
 
     try:
         config = Config(args.config)
