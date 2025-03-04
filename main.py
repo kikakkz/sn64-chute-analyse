@@ -9,7 +9,6 @@ import time
 import traceback
 import requests
 import datetime
-import asyncio
 
 from prettytable import PrettyTable
 from sqlite_op import *
@@ -176,7 +175,7 @@ class Executor:
         else:
             return True if len(out.strip()) > 0 else False
 
-    async def fetch_instance_chutes_compute_units(self, record):
+    def fetch_instance_chutes_compute_units(self, record):
         instance_id = record[0]
         if self.instances_chutes_compute_units.get(instance_id) is None:
             (invocation_count_1_hour, bounty_count_1_hour, compute_units_1_hour) = self.fetch_instance_compute(instance_id, self.latest_time, '1 hour')
@@ -203,10 +202,10 @@ class Executor:
                 "deleted_at": deleted_at
             }
 
-    async def fetch_instances_chutes_compute_units(self):
+    def fetch_instances_chutes_compute_units(self):
         self.instances_chutes_compute_units = {}
-        tasks = [self.fetch_instance_chutes_compute_units(record) for record in self.records]
-        await asyncio.gather(*tasks)
+        for record in self.records:
+            self.fetch_instance_chutes_compute_units(record)
 
     def print_hosts_compute_units(self):
         t = PrettyTable(['Host IP', 'Active', 'GPU Type', 'Compute Units 1 hour', 'Compute Units 1 day', 'Compute Units 7 days'])
@@ -280,7 +279,7 @@ def main():
     executor.insert_instances()
     executor.fetch_all_active_instances()
     executor.fetch_audit_latest_time()
-    asyncio.run(executor.fetch_instances_chutes_compute_units())
+    executor.fetch_instances_chutes_compute_units()
 
     instance_db.close_connection()
 
