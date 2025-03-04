@@ -9,9 +9,9 @@ import time
 import traceback
 import requests
 import datetime
-import sqlite3
 
 from prettytable import PrettyTable
+from sqlite_op import *
 
 class Config:
     def __init__(self, config):
@@ -30,106 +30,12 @@ class Config:
     def chutes_audit_host(self):
         return self.config['chutes_audit']
 
-class Sqlite:
-    def __init__(self):
-        self.db_name = "chutes_deployments.db"
-        self.deployments_table = "deployments"
-
-    def init_db(self):
-        sql = f'''
-            CREATE TABLE IF NOT EXISTS {self.deployments_table}
-            (
-            INSTANCE_ID CHAR(50) NOT NULL,
-            DEPLOYMENT_ID CHAR(50) NOT NULL,
-            CHUTE_ID CHAR(50) NOT NULL,
-            HOST_IP CHAR(50) NOT NULL,
-            GPU_TYPE CHAR(50) NOT NULL,
-            CREATED_AT CHAR(50) NOT NULL,
-            GPU_COUNT INT NOT NULL,
-            DELETED_AT CHAR(50) DEFAULT 0
-            );
-        '''
-        conn = sqlite3.connect(self.db_name)
-        c = conn.cursor()
-        c.execute(sql)
-        conn.commit()
-        conn.close()
-
-    def query_record(self, instance_id, deployment_id, chute_id, host_ip, gpu_type):
-        records = []
-        sql = f'''
-            SELECT * FROM {self.deployments_table}
-            WHERE INSTANCE_ID = ?
-            AND DEPLOYMENT_ID = ?
-            AND CHUTE_ID = ?
-            AND HOST_IP = ?
-            AND GPU_TYPE = ?
-            ;
-        '''
-
-        conn = sqlite3.connect(self.db_name)
-        c = conn.cursor()
-        c.execute(sql, (instance_id, deployment_id, chute_id, host_ip, gpu_type))
-        for row in c:
-            records.append(row)
-        conn.close()
-        return records
-
-
-    def insert_into_db(self, instance_id, deployment_id, chute_id, host_ip, gpu_type, created_at, gpu_count):
-        records = self.query_record(instance_id, deployment_id, chute_id, host_ip, gpu_type)
-        if len(records) == 0:
-            sql = f'''
-                INSERT OR IGNORE INTO {self.deployments_table}
-                (
-                INSTANCE_ID,
-                DEPLOYMENT_ID,
-                CHUTE_ID,
-                HOST_IP,
-                GPU_TYPE,
-                CREATED_AT,
-                GPU_COUNT
-                )
-                VALUES (?, ?, ?, ?, ?, ?, ?);
-            '''
-            conn = sqlite3.connect(self.db_name)
-            c = conn.cursor()
-            c.execute(sql, (instance_id, deployment_id, chute_id, host_ip, gpu_type, created_at, gpu_count))
-            conn.commit()
-            conn.close()
-
-    def update_deployment_deleted_at(self, deleted_at, instance_id):
-        sql = f'''
-            UPDATE {self.deployments_table}
-            SET DELETED_AT = ?
-            WHERE INSTANCE_ID = ?
-            ;
-        '''
-        conn = sqlite3.connect(self.db_name)
-        c = conn.cursor()
-        c.execute(sql,(deleted_at, instance_id))
-        conn.commit()
-        conn.close()
-
-    def query_records(self):
-        sql = f'''
-            SELECT * FROM {self.deployments_table}
-            WHERE DELETED_AT=0 ORDER BY CREATED_AT DESC;
-        '''
-        self.records = []
-        conn = sqlite3.connect(self.db_name)
-        c = conn.cursor()
-        c.execute(sql)
-        for row in c:
-            self.records.append(row)
-        conn.close()
-        print(self.records)
-
 
 class Executor:
-    def __init__(self, config, sql):
+    def __init__(self, config, instance_db):
         self.config = config
-        self.sql = sql
+        self.instance_db = instance_db
+        self.records = []
         self.hotkey = self.config.hotkey()
         self.miner_uid = self.config.miner_uid()
         self.chutes_nodes = {}
@@ -161,7 +67,13 @@ class Executor:
         '''
         return self.execute_ssh_command(self.primary_host['host_ip'], self.primary_host['username'], command)
 
-    def insert_into_sqlite(self):
+    def fetch_all_active_instances(self):
+        self.records = []
+        results = self.instance_db.query_active_instances()
+        for row in results:
+            self.records.append(row)
+
+    def insert_instances(self):
         (err, out) = self.fetch_deployments_from_k8s()
         if err != '':
             raise Exception(err)
@@ -173,7 +85,10 @@ class Executor:
             gpu_type = deployment.split('|')[4].strip()
             created_at = deployment.split('|')[5].strip()
             gpu_count = deployment.split('|')[6].strip()
-            self.sql.insert_into_db(instance_id, deployment_id, chute_id, host_ip, gpu_type, created_at, gpu_count)
+
+            result = self.instance_db.check_instance_if_exists((instance_id, deployment_id, chute_id, host_ip, gpu_type))
+            if len(result) == 0:
+                self.instance_db.insert_instance((instance_id, deployment_id, chute_id, host_ip, gpu_type, created_at, gpu_count))
 
     def fetch_audit_latest_time(self):
         pod_name = self.chutes_audit_host['pod_name']
@@ -247,7 +162,7 @@ class Executor:
             return out.split('|')[1].strip() if len(out.split('|')[1].strip()) > 0 else 0
 
     def update_instance_deleted_at(self, deleted_at, instance_id):
-        self.sql.update_deployment_deleted_at(deleted_at, instance_id)
+        self.instance_db.update_instance_deleted_at((deleted_at, instance_id))
 
     def check_host_ip_is_active(self, host_ip):
         pod_name = self.primary_host['pod_name']
@@ -262,7 +177,7 @@ class Executor:
 
     def fetch_instances_chutes_compute_units(self):
         self.instances_chutes_compute_units = {}
-        for record in self.sql.records:
+        for record in self.records:
             instance_id = record[0]
             if self.instances_chutes_compute_units.get(instance_id) is None:
                 (invocation_count_1_hour, bounty_count_1_hour, compute_units_1_hour) = self.fetch_instance_compute(instance_id, self.latest_time, '1 hour')
@@ -353,15 +268,20 @@ def main():
     except Exception as e:
         print(f'\33[31mFailed load config: {e}\33[0m')
 
-    sql = Sqlite()
-    sql.init_db()
+    db_name = "chutes_deployments.db"
+    instance_db = SQLiteInstance(db_name)
+    instance_db.connect()
+    instance_db.create_table()
 
-    executor = Executor(config, sql)
-    executor.insert_into_sqlite()
-    sql.query_records()
+    executor = Executor(config, instance_db)
 
+    executor.insert_instances()
+    executor.fetch_all_active_instances()
     executor.fetch_audit_latest_time()
     executor.fetch_instances_chutes_compute_units()
+
+    instance_db.close_connection()
+
     executor.print_hosts_compute_units()
     executor.print_hosts_chutes_compute_units()
 
