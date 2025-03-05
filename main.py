@@ -150,9 +150,9 @@ class Executor:
         else:
             return out.split('|')[1].strip()
 
-    def fetch_instance_deleted_at(self, instance_id):
+    def fetch_instance_deleted_at(self, deployment_id):
         pod_name = self.primary_host['pod_name']
-        command = f'microk8s kubectl exec -n {pod_name} -- psql -U chutes chutes -c "select instance_id, deleted_at from deployment_audit where instance_id = \'{instance_id}\';" | grep {instance_id}'
+        command = f'microk8s kubectl exec -n {pod_name} -- psql -U chutes chutes -c "select deployment_id, deleted_at from deployment_audit where deployment_id = \'{deployment_id}\';" | grep {deployment_id}'
         (err, out) = self.execute_ssh_command(self.primary_host['host_ip'], self.primary_host['username'], command)
         if err != '':
             raise Exception(err)
@@ -181,7 +181,7 @@ class Executor:
             (invocation_count_1_hour, bounty_count_1_hour, compute_units_1_hour) = self.fetch_instance_compute(instance_id, self.latest_time, '1 hour')
             (invocation_count_1_day, bounty_count_1_day, compute_units_1_day) = self.fetch_instance_compute(instance_id, self.latest_time, '1 day')
             (invocation_count_7_days, bounty_count_7_days, compute_units_7_days) = self.fetch_instance_compute(instance_id, self.latest_time, '7 days')
-            deleted_at = self.fetch_instance_deleted_at(instance_id)
+            deleted_at = self.fetch_instance_deleted_at(record[1])
             self.update_instance_deleted_at(deleted_at, instance_id)
             self.instances_chutes_compute_units[instance_id] = {
                 "compute_units_1_hour": compute_units_1_hour,
