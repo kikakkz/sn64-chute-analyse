@@ -159,7 +159,7 @@ class Executor:
         if out == '':
             return 0
         else:
-            return out.split('|')[1].strip() if len(out.split('|')[1].strip()) > 0 else 0
+            return out.split('|')[1].strip() if len(out.split('|')[1].strip()) > 4 else 0
 
     def update_instance_deleted_at(self, deleted_at, instance_id):
         self.instance_db.update_instance_deleted_at((deleted_at, instance_id))
