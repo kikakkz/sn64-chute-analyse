@@ -32,7 +32,7 @@ class SQLiteInstance(SQLiteBase):
         self.conn.commit()
 
     def query_active_instances(self):
-        sql = '''SELECT * FROM deployments WHERE DELETED_AT=0 ORDER BY CREATED_AT DESC;'''
+        sql = '''SELECT * FROM deployments WHERE DELETED_AT=0 or DELETED_AT IS NULL ORDER BY CREATED_AT DESC;'''
         self.cursor.execute(sql)
         return self.cursor.fetchall()
 
