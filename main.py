@@ -273,7 +273,9 @@ def main():
 
     delete_config = config.fetch_delete_cfg()
     primary_host = config.primary_host()
-    execute_delete_instance(delete_config, instances_chutes, primary_host)
+
+    deletion = Deletion(delete_config, instance_chutes, primary_host)
+    deletion.execute_delete_instance()
 
 
 if __name__ == '__main__':
