@@ -21,6 +21,8 @@ class Deletion:
         self.instances = instances
         self.primary_host = primary_host
 
+        self.delete_cfg = DeleteParam(self.config)
+
 
     def fetch_chutes(self):
         self.chutes = {}
@@ -34,26 +36,26 @@ class Deletion:
     def fetch_non_performance_chutes(self):
         self.fetch_chutes()
 
-        self.non_performance_instances = {}
+        self.low_performance_instances = {}
         for instance, instance_info in self.instances.items():
             running_time = time.time() - time.mktime(time.strptime(instance_info['started_at'], "%Y-%m-%d %H:%M:%S.%f+00"))
 
-            if self.check_chute_count_less_than_least(len(self.chutes[instance_info["chute_id"]]), self.delete_cfg.least_local_chute_count):
+            if self.check_least_chute_count(len(self.chutes[instance_info["chute_id"]]), self.delete_cfg.least_local_chute_count):
                 continue
 
             self.chutes[instance_info["chute_id"]].remove(instance)
 
-            if self.check_compute_units_not_performance(running_time = running_time, least_running_time = self.delete_cfg.least_running_time_1_day, compute_units = instance_info['compute_units_1_day'], least_compute_units = self.delete_cfg.least_compute_units_1_day):
-                self.non_performance_instances[instance] = instance_info
+            if self.check_low_compute_units(running_time = running_time, least_running_time = self.delete_cfg.least_running_time_1_day, compute_units = instance_info['compute_units_1_day'], least_compute_units = self.delete_cfg.least_compute_units_1_day):
+                self.low_performance_instances[instance] = instance_info
 
 
-    def check_compute_units_not_performance(self, running_time, least_running_time, compute_units, least_compute_units):
+    def check_low_compute_units(self, running_time, least_running_time, compute_units, least_compute_units):
         is_running_time_valid = running_time >= least_running_time
         is_less_than_least_compute_units = compute_units < least_compute_units
         return is_running_time_valid and is_less_than_least_compute_units
  
 
-    def check_chute_count_less_than_least(self, chute_count, least_local_chute_count):
+    def check_least_chute_count(self, chute_count, least_local_chute_count):
         is_less_than_least = chute_count < least_local_chute_count
         return is_less_than_least
 
@@ -62,7 +64,7 @@ class Deletion:
         pod_name = self.primary_host['pod_name']
         host_ip = self.primary_host['host_ip']
 
-        for instance, instance_info in self.non_performance_instances.items():
+        for instance, instance_info in self.low_performance_instances.items():
             deployment_id = instance_info['deployment_id']
             command = f' microk8s kubectl delete deployment chute-{deployment_id} -n chutes'
             return execute_ssh_command(self.primary_host['host_ip'], self.primary_host['username'], command)
@@ -71,11 +73,10 @@ class Deletion:
     def print_non_performance_chutes(self):
         title = "Non Performance Chutes"
         sortby = "Chute ID"
-        display_instance_chutes(self.non_performance_instances, title, sortby)
+        display_instance_chutes(self.low_performance_instances, title, sortby)
 
 
     def execute_delete_instance(self):
-        self.delete_cfg = DeleteParam(self.config)
         self.fetch_non_performance_chutes()
 
         self.print_non_performance_chutes()
