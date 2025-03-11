@@ -10,5 +10,24 @@
     "host_ip": "{chutes_audit_host_ip}",
     "username": "test",
     "pod_name": "{chutes_audit_pod_name}"
+  },
+  "delete_cfg": {
+    // second, must > 7200
+    // running time > running_time_for_hour & Compute Units 1h < compute_units_for_hour should be deleted
+    "running_time_for_hour": 7200,
+    "compute_units_for_hour": 2,
+    "invocation_count_for_hour": 1,
+    // second, must > 86400
+    // running time > running_time_for_day & Compute Units 1d < compute_units_for_day should be deleted
+    "running_time_for_day": 86400,
+    "compute_units_for_day": 10,
+    "invocation_count_for_day": 10,
+    // second, must > 604800
+    // running time > running_time_for_day & Compute Units 7d < compute_units_for_7day should be deleted
+    "running_time_for_7day": 604800,
+    "compute_units_for_7day": 100,
+    "invocation_count_for_7day": 100,
+    "local_chute_reserved": 1,
+    "remote_chute_count": 10
   }
 }
