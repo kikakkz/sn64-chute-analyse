@@ -296,14 +296,13 @@ class Executor:
 
 
     def delete_inefficient_chutes(self, auto_delete: bool):
-        print(self.delete_cfg)
         self.inefficient_chutes = {}
         for instance, compute_units in self.instances_chutes_compute_units.items():
             need_delete = False
             running_time = time.time() - time.mktime(time.strptime(compute_units['started_at'], "%Y-%m-%d %H:%M:%S.%f+00"))
 
             # compute_units_1_hour < self.delete_cfg["compute_units_for_hour"], if return True, need delete
-            check_compute_units_1_hour = check_compute_units(running_time, self.delete_cfg["running_time_for_hour"], int(str(compute_units['compute_units_1_hour']).split('.')[0]), self.delete_cfg["compute_units_for_hour"])
+            # check_compute_units_1_hour = check_compute_units(running_time, self.delete_cfg["running_time_for_hour"], int(str(compute_units['compute_units_1_hour']).split('.')[0]), self.delete_cfg["compute_units_for_hour"])
 
             # compute_units_1_day < self.delete_cfg["compute_units_for_day"], if return True, need delete
             check_compute_units_1_day = check_compute_units(running_time, self.delete_cfg["running_time_for_day"], int(str(compute_units['compute_units_1_day']).split('.')[0]), self.delete_cfg["compute_units_for_day"])
@@ -312,7 +311,7 @@ class Executor:
             check_compute_units_7_day = check_compute_units(running_time, self.delete_cfg["running_time_for_7day"], int(str(compute_units['compute_units_7_days']).split('.')[0]), self.delete_cfg["compute_units_for_7day"])
 
             # invocation_count_1_hour < self.delete_cfg["invocation_count_for_hour"], if return True, need delete
-            check_invocation_count_1_hour = check_invocation_count(running_time, self.delete_cfg["running_time_for_hour"], int(compute_units['invocation_count_1_hour']), self.delete_cfg["invocation_count_for_hour"])
+            # check_invocation_count_1_hour = check_invocation_count(running_time, self.delete_cfg["running_time_for_hour"], int(compute_units['invocation_count_1_hour']), self.delete_cfg["invocation_count_for_hour"])
 
             # invocation_count_1_day < self.delete_cfg["invocation_count_for_day"], if return True, need delete
             check_invocation_count_1_day = check_invocation_count(running_time, self.delete_cfg["running_time_for_day"], int(compute_units['invocation_count_1_day']), self.delete_cfg["invocation_count_for_day"])
@@ -323,8 +322,8 @@ class Executor:
             # chute_count > reserved_chute_count, if return True, need delete
             check_local_chute_count = check_chute_count(len(self.chutes[compute_units["chute_id"]]), self.delete_cfg["local_chute_reserved"])
 
-            if (check_compute_units_1_hour or check_compute_units_1_day or check_compute_units_7_day \
-                or check_invocation_count_1_hour or check_invocation_count_1_day or check_invocation_count_7_days) \
+            if (check_compute_units_1_day or check_compute_units_7_day \
+                or check_invocation_count_1_day or check_invocation_count_7_days) \
                 and check_local_chute_count:
                 need_delete = True
 
