@@ -16,7 +16,8 @@ from get_args import get_cli_args
 from get_args import Config
 from remote_ssh import execute_ssh_command
 
-from delete_instance import execute_delete_instance
+from delete_instance import Deletion
+
 from print_table import display_instance_chutes
 from sqlite_op import *
 from prettytable import PrettyTable
