@@ -7,28 +7,12 @@ from print_table import display_instance_chutes
 
 
 class DeleteParam:
-    def __init__(self, least_running_time_1_day, least_running_time_7_days, least_compute_units_1_day, least_compute_units_7_days, least_local_chute_count):
-        self.least_running_time_1_day = least_running_time_1_day
-        self.least_running_time_7_days= least_running_time_7_days
-        self.least_compute_units_1_day = least_compute_units_1_day
-        self.least_compute_units_7_days = least_compute_units_7_days
-        self.least_local_chute_count = least_local_chute_count
-
-
-def init_delete_config(config):
-    least_running_time_1_day = config.get('least_running_time_1_day', '86400')
-    least_running_time_7_days = config.get('least_running_time_7_days', '604800')
-    least_compute_units_1_day = config.get('least_compute_units_1_day', '0')
-    least_compute_units_7_days = config.get('least_compute_units_7_days', '0')
-    least_local_chute_count = config.get('least_local_chute_count', '0')
-
-    return DeleteParam(
-        least_running_time_1_day,
-        least_running_time_7_days,
-        least_compute_units_1_day,
-        least_compute_units_7_days,
-        least_local_chute_count
-        )
+    def __init__(self, config): 
+        self.least_running_time_1_day = config.get('least_running_time_1_day', '86400')
+        self.least_running_time_7_days= config.get('least_running_time_7_days', '604800')
+        self.least_compute_units_1_day = config.get('least_compute_units_1_day', '0')
+        self.least_compute_units_7_days = config.get('least_compute_units_7_days', '0')
+        self.least_local_chute_count = config.get('least_local_chute_count', '0')
 
 
 def fetch_chutes(instance_chutes):
@@ -86,8 +70,7 @@ def print_non_performance_chutes(non_performance_chutes):
 
 
 def execute_delete_instance(config, instance_chutes, primary_host):
-    delete_cfg = init_delete_config(config)
-    
+    delete_cfg = DeleteParam(config)
     non_performance_chutes = fetch_non_performance_chutes(delete_cfg, instance_chutes)
 
     print_non_performance_chutes(non_performance_chutes)
