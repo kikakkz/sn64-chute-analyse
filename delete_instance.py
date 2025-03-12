@@ -1,5 +1,6 @@
 import time
 
+from func_timeout import func_timeout, FunctionTimedOut
 from get_args import get_cli_args
 from get_args import Config
 from remote_ssh import execute_ssh_command
@@ -73,7 +74,12 @@ class Deletion:
     def prompt_user_input(self):
         selected_instances = {}
 
-        user_input = input("Enter the instances to remove (separated by spaces or commas): ").strip()
+
+        try:
+            func_timeout(300, lambda: input("Enter the instances to remove (separated by spaces or commas): "))
+        except:
+            user_input = ""
+
         for instance in user_input.split(' '):
             print(instance)
             selected_instance = [k for k in self.low_performance_instances if instance in k]
@@ -94,7 +100,10 @@ class Deletion:
             selected_instances = self.prompt_user_input()
             display_instance_chutes(selected_instances, "Selected low performance instances for Deletion", "Chute ID")
 
-            input("Preess Enter to confirm deletion...")
+            try:
+                func_timeout(10, lambda: input("Preess Enter to confirm deletion..."))
+            except:
+                user_input = None
 
         if len(selected_instances) == 0:
             return
