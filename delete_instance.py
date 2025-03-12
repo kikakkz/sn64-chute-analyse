@@ -70,12 +70,6 @@ class Deletion:
             return execute_ssh_command(self.primary_host['host_ip'], self.primary_host['username'], command)
 
 
-    def print_low_performance_chutes(self):
-        title = "Non Performance Chutes"
-        sortby = "Chute ID"
-        display_instance_chutes(self.low_performance_instances, title, sortby)
-
-
     def prompt_user_input(self):
         selected_instances = {}
 
@@ -92,13 +86,13 @@ class Deletion:
     def execute_delete_instance(self, auto_delete):
         self.fetch_low_performance_chutes()
 
-        self.print_low_performance_chutes()
+        display_instance_chutes(self.low_performance_instances, "Low Performance Chutes", "Chute ID")
 
         if auto_delete:
             selected_instances = self.low_performance_instances
         else:
             selected_instances = self.prompt_user_input()
-            self.print_low_performance_chutes(selected_instances, title=f"Selected low performance instances for Deletion")
+            display_instance_chutes(selected_instances, "Selected low performance instances for Deletion", "Chute ID")
 
             input("Preess Enter to confirm deletion...")
 

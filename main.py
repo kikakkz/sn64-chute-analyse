@@ -177,7 +177,6 @@ class Executor:
             mutex.acquire()
             try:
                 self.instance_db.connect()
-                print(f"Update {instance_id} deleted_at={deleted_at}")
                 self.update_instance_deleted_at(deleted_at, instance_id)
                 time.sleep(1)
             except Exception as e:
