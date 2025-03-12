@@ -13,6 +13,8 @@ class DeleteParam:
         self.least_running_time_7_days= config.get('least_running_time_7_days', '604800')
         self.least_compute_units_1_day = config.get('least_compute_units_1_day', '0')
         self.least_compute_units_7_days = config.get('least_compute_units_7_days', '0')
+        self.least_invocation_count_1_day = config.get('least_invocation_count_1_day', 0)
+        self.least_invocation_count_7_days = config.get('least_invocation_count_7_days', 0)
         self.least_local_chute_count = config.get('least_local_chute_count', '0')
 
 
@@ -46,8 +48,16 @@ class Deletion:
 
             self.chutes[instance_info["chute_id"]].remove(instance)
 
-            if self.check_low_compute_units(running_time = running_time, least_running_time = self.delete_cfg.least_running_time_1_day, compute_units = instance_info['compute_units_1_day'], least_compute_units = self.delete_cfg.least_compute_units_1_day):
+            if self.check_low_compute_units(running_time = running_time, least_running_time = self.delete_cfg.least_running_time_1_day, \
+                    compute_units = instance_info['compute_units_1_day'], least_compute_units = self.delete_cfg.least_compute_units_1_day):
                 self.low_performance_instances[instance] = instance_info
+                continue
+
+
+            if self.check_low_invocation_count(running_time = running_time, least_running_time = self.delete_cfg.least_running_time_1_day, \
+                    invocation_count = instance_info['invocation_count_1_day'], least_invocation_count = self.delete_cfg.least_invocation_count_1_day):
+                self.low_performance_instances[instance] = instance_info
+                continue
 
 
     def check_low_compute_units(self, running_time, least_running_time, compute_units, least_compute_units):
@@ -55,6 +65,12 @@ class Deletion:
         is_less_than_least_compute_units = int(str(compute_units).split('.')[0]) < int(least_compute_units)
         return is_running_time_valid and is_less_than_least_compute_units
  
+
+    def check_low_invocation_count(self, running_time, least_running_time, invocation_count, least_invocation_count):
+        is_running_time_valid = running_time >= least_running_time
+        is_less_than_least_invocation_count = int(invocation_count) < int(least_invocation_count)
+        return is_running_time_valid and is_less_than_least_invocation_count
+
 
     def check_least_chute_count(self, chute_count, least_local_chute_count):
         is_less_than_least = chute_count < least_local_chute_count
