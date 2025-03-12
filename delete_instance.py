@@ -33,7 +33,7 @@ class Deletion:
                 self.chutes[instance_info['chute_id']].append(instance)
 
 
-    def fetch_non_performance_chutes(self):
+    def fetch_low_performance_chutes(self):
         self.fetch_chutes()
 
         self.low_performance_instances = {}
@@ -51,7 +51,7 @@ class Deletion:
 
     def check_low_compute_units(self, running_time, least_running_time, compute_units, least_compute_units):
         is_running_time_valid = running_time >= least_running_time
-        is_less_than_least_compute_units = compute_units < least_compute_units
+        is_less_than_least_compute_units = int(str(compute_units).split('.')[0]) < int(least_compute_units)
         return is_running_time_valid and is_less_than_least_compute_units
  
 
@@ -60,27 +60,52 @@ class Deletion:
         return is_less_than_least
 
 
-    def delete_instance_from_k8s(self):
+    def delete_low_performance_from_k8s(self, selected_instances):
         pod_name = self.primary_host['pod_name']
         host_ip = self.primary_host['host_ip']
 
-        for instance, instance_info in self.low_performance_instances.items():
+        for instance, instance_info in selected_instances.items():
             deployment_id = instance_info['deployment_id']
             command = f' microk8s kubectl delete deployment chute-{deployment_id} -n chutes'
             return execute_ssh_command(self.primary_host['host_ip'], self.primary_host['username'], command)
 
 
-    def print_non_performance_chutes(self):
+    def print_low_performance_chutes(self):
         title = "Non Performance Chutes"
         sortby = "Chute ID"
         display_instance_chutes(self.low_performance_instances, title, sortby)
 
 
-    def execute_delete_instance(self):
-        self.fetch_non_performance_chutes()
+    def prompt_user_input(self):
+        selected_instances = {}
 
-        self.print_non_performance_chutes()
-        self.delete_instance_from_k8s()
+        user_input = input("Enter the instances to remove (separated by spaces or commas): ").strip()
+        for instance in user_input.split(' '):
+            print(instance)
+            selected_instance = [k for k in self.low_performance_instances if instance in k]
+            if len(selected_instance) != 0:
+                selected_instances[selected_instance] = self.low_performance_instances[selected_instance]
+
+        return selected_instances
+
+
+    def execute_delete_instance(self, auto_delete):
+        self.fetch_low_performance_chutes()
+
+        self.print_low_performance_chutes()
+
+        if auto_delete:
+            selected_instances = self.low_performance_instances
+        else:
+            selected_instances = self.prompt_user_input()
+            self.print_low_performance_chutes(selected_instances, title=f"Selected low performance instances for Deletion")
+
+            input("Preess Enter to confirm deletion...")
+
+        if len(selected_instances) == 0:
+            return
+
+        self.delete_low_performance_from_k8s(selected_instances)
 
 
 if __name__ == '__main__':
@@ -117,4 +142,5 @@ if __name__ == '__main__':
     }
     # run test
     # deletion = Deletion(delete_config, instance_chutes, primary_host)
-    # deletion.execute_delete_instance()
+    # auto_delete = False
+    # deletion.execute_delete_instance(auto_delete)
