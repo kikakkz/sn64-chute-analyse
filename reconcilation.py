@@ -7,8 +7,8 @@ from remote_ssh import execute_ssh_command
 from print_table import display_instance_chutes
 
 
-class DeleteParam:
-    def __init__(self, config): 
+class Config:
+    def __init__(self, config):
         self.least_running_time_1_day = config.get('least_running_time_1_day', '86400')
         self.least_running_time_7_days= config.get('least_running_time_7_days', '604800')
         self.least_compute_units_1_day = config.get('least_compute_units_1_day', '0')
@@ -19,12 +19,11 @@ class DeleteParam:
 
 
 class Deletion:
-    def __init__(self, config, instances, primary_host):
-        self.config = config
+    def __init__(self, config, instances, primary_host, auto_delete):
         self.instances = instances
         self.primary_host = primary_host
-
-        self.delete_cfg = DeleteParam(self.config)
+        self.config = Config(config)
+        self.auto_delete = auto_delete
 
 
     def fetch_chutes(self):
@@ -105,7 +104,10 @@ class Deletion:
         return selected_instances
 
 
-    def execute_delete_instance(self, auto_delete):
+    def do(self):
+        if self.auto_delete is False:
+            return
+
         self.fetch_low_performance_chutes()
 
         display_instance_chutes(self.low_performance_instances, "Low Performance Chutes", "Chute ID")

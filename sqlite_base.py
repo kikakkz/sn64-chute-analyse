@@ -7,9 +7,9 @@ class SQLiteBase:
         self.cursor = None
 
     def connect(self):
-        self.conn= sqlite3.connect(self.db_name)
-        self.cursor =self.conn.cursor()
-    
+        self.conn = sqlite3.connect(self.db_name)
+        self.cursor = self.conn.cursor()
+
     def close_connection(self):
         if self.conn:
             self.conn.close()

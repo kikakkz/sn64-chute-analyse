@@ -36,8 +36,8 @@ class SQLiteInstance(SQLiteBase):
         self.cursor.execute(sql)
         return self.cursor.fetchall()
 
-    def check_instance_if_exists(self, instance_data):
-        sql = '''SELECT * FROM deployments
+    def instance_exists(self, instance_data):
+        sql = '''SELECT COUNT(*) FROM deployments
             WHERE INSTANCE_ID = ?
             AND DEPLOYMENT_ID = ?
             AND CHUTE_ID = ?
@@ -62,7 +62,7 @@ if __name__ == "__main__":
     instance_db.create_table()
     # instance_db.insert_instance((1,2,3,4,5,6,7))
     # results = instance_db.query_active_instances()
-    # result = instance_db.check_instance_if_exists((1,2,3,4,5))
+    # result = instance_db.instance_exists((1,2,3,4,5))
     # instance_db.update_instance_deleted_at((111, 1))
     instance_db.close_connection()
 

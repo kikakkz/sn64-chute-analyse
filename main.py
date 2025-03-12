@@ -36,7 +36,7 @@ class Executor:
         self.primary_host = self.config.primary_host()
         self.chutes_audit_host = self.config.chutes_audit_host()
         self.instance_infos = {}
-        self.delete_cfg = self.config.fetch_delete_cfg()
+        self.compute_units = {}
 
 
     def fetch_deployments_from_k8s(self):
@@ -51,11 +51,10 @@ class Executor:
         return execute_ssh_command(self.primary_host['host_ip'], self.primary_host['username'], command)
 
 
-    def fetch_all_active_instances(self):
+    def query_active_instances(self):
         self.records = []
-        results = self.instance_db.query_active_instances()
-        for row in results:
-            self.records.append(row)
+        instances = self.instance_db.query_active_instances()
+        self.records.extend(instances)
 
 
     def insert_instances(self):
@@ -71,12 +70,11 @@ class Executor:
             created_at = deployment.split('|')[5].strip()
             gpu_count = deployment.split('|')[6].strip()
 
-            result = self.instance_db.check_instance_if_exists((instance_id, deployment_id, chute_id, host_ip, gpu_type))
-            if len(result) == 0:
+            if self.instance_db.instance_exists((instance_id, deployment_id, chute_id, host_ip, gpu_type)) is False:
                 self.instance_db.insert_instance((instance_id, deployment_id, chute_id, host_ip, gpu_type, created_at, gpu_count))
 
 
-    def fetch_audit_latest_time(self):
+    def query_latest_audit_time(self):
         pod_name = self.chutes_audit_host['pod_name']
         today = datetime.date.today()
         command = f'sudo docker exec {pod_name} psql -U user chutes_audit -c \"SELECT max(started_at) FROM invocations;\" | grep {today}'
@@ -87,7 +85,7 @@ class Executor:
         self.latest_time = latest_time
 
 
-    def fetch_instance_compute(self, instance_id, latest_time, check_interval):
+    def fetch_instance_metrics(self, instance_id, latest_time, check_interval):
         pod_name = self.chutes_audit_host['pod_name']
         prefix = str(uuid.uuid1())[-12:]
         command = f'''sudo docker exec {pod_name} psql -U user chutes_audit -c \
@@ -170,9 +168,10 @@ class Executor:
     def fetch_instance_chutes_compute_units(self, record):
         instance_id = record[0]
         if self.instances_chutes_compute_units.get(instance_id) is None:
-            (invocation_count_1_hour, bounty_count_1_hour, compute_units_1_hour) = self.fetch_instance_compute(instance_id, self.latest_time, '1 hour')
+            metrics_1_hour = self.fetch_instance_compute(instance_id, self.latest_time, '1 hour')
             (invocation_count_1_day, bounty_count_1_day, compute_units_1_day) = self.fetch_instance_compute(instance_id, self.latest_time, '1 day')
             (invocation_count_7_days, bounty_count_7_days, compute_units_7_days) = self.fetch_instance_compute(instance_id, self.latest_time, '7 days')
+
             deleted_at = self.fetch_instance_deleted_at(record[1])
             mutex.acquire()
             try:
@@ -187,6 +186,13 @@ class Executor:
 
             self.instances_chutes_compute_units[instance_id] = {
                 "instance_id": instance_id,
+                "1_hour": {
+                    "compute_units":,
+                    "bounty":,
+                },
+                "compute_units": {
+                    "1_hour": ,
+                },
                 "compute_units_1_hour": compute_units_1_hour,
                 "compute_units_1_day": compute_units_1_day,
                 "compute_units_7_days": compute_units_7_days,
@@ -206,12 +212,11 @@ class Executor:
             }
 
 
-    def fetch_instances_chutes_compute_units(self):
+    def fetch_instances_metrics(self):
         self.instances_chutes_compute_units = {}
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
             futures = {executor.submit(self.fetch_instance_chutes_compute_units, record): record for record in self.records}
-
             concurrent.futures.wait(futures, return_when=concurrent.futures.ALL_COMPLETED)
 
         return self.instances_chutes_compute_units
@@ -232,11 +237,11 @@ class Executor:
             t.add_row([
                 host_ip,
                 self.check_host_ip_is_active(host_ip),
-                compute_units['model_short_ref'],
-                compute_units['compute_units_1_hour'],
-                compute_units['compute_units_1_day'],
-                compute_units['compute_units_7_days']
-                ])
+                compute_units['gpu_short_ref'],
+                compute_units['1_hour'],
+                compute_units['1_day'],
+                compute_units['7_days']
+            ])
 
         print(t.get_string(sortby="Active"))
 
@@ -246,36 +251,28 @@ class Executor:
 
 
 def main():
-    args = get_cli_args()
-    auto_delete = args.auto_delete
+    config = Config()
 
-    try:
-        config = Config(args.config)
-    except Exception as e:
-        print(f'\33[31mFailed load config: {e}\33[0m')
-
-    db_name = "chutes_deployments.db"
-    instance_db = SQLiteInstance(db_name)
+    instance_db = SQLiteInstance(config.database_file())
     instance_db.connect()
     instance_db.create_table()
 
     executor = Executor(config, instance_db)
 
     executor.insert_instances()
-    executor.fetch_all_active_instances()
+    executor.query_active_instances()
     instance_db.close_connection()
 
-    executor.fetch_audit_latest_time()
-    instances_chutes = executor.fetch_instances_chutes_compute_units()
+    executor.query_latest_audit_time()
+    metrics = executor.fetch_instances_metrics()
 
     executor.print_hosts_compute_units()
     executor.print_hosts_chutes_compute_units()
 
-    delete_config = config.fetch_delete_cfg()
     primary_host = config.primary_host()
 
-    deletion = Deletion(delete_config, instances_chutes, primary_host)
-    deletion.execute_delete_instance(auto_delete)
+    reconcilation = Reconcilation(config.reconcilation(), metrics, primary_host)
+    reconcilation.do()
 
 
 if __name__ == '__main__':
