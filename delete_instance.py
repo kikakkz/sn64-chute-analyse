@@ -9,10 +9,13 @@ from print_table import display_instance_chutes
 
 class DeleteParam:
     def __init__(self, config): 
+        self.least_running_time_1_hour = max(config.get('least_running_time_1_hour', '7200'), 7200)
         self.least_running_time_1_day = config.get('least_running_time_1_day', '86400')
         self.least_running_time_7_days= config.get('least_running_time_7_days', '604800')
+        self.least_compute_units_1_hour = config.get('least_compute_units_1_hour', '0')
         self.least_compute_units_1_day = config.get('least_compute_units_1_day', '0')
         self.least_compute_units_7_days = config.get('least_compute_units_7_days', '0')
+        self.least_invocation_count_1_hour = config.get('least_invocation_count_1_hour', 0)
         self.least_invocation_count_1_day = config.get('least_invocation_count_1_day', 0)
         self.least_invocation_count_7_days = config.get('least_invocation_count_7_days', 0)
         self.least_local_chute_count = config.get('least_local_chute_count', '0')
@@ -48,11 +51,20 @@ class Deletion:
 
             self.chutes[instance_info["chute_id"]].remove(instance)
 
+            if self.check_low_compute_units(running_time = running_time, least_running_time = self.delete_cfg.least_running_time_1_hour, \
+                    compute_units = instance_info['compute_units_1_hour'], least_compute_units = self.delete_cfg.least_compute_units_1_hour):
+                self.low_performance_instances[instance] = instance_info
+                continue
+
             if self.check_low_compute_units(running_time = running_time, least_running_time = self.delete_cfg.least_running_time_1_day, \
                     compute_units = instance_info['compute_units_1_day'], least_compute_units = self.delete_cfg.least_compute_units_1_day):
                 self.low_performance_instances[instance] = instance_info
                 continue
 
+            if self.check_low_invocation_count(running_time = running_time, least_running_time = self.delete_cfg.least_running_time_1_hour, \
+                    invocation_count = instance_info['invocation_count_1_hour'], least_invocation_count = self.delete_cfg.least_invocation_count_1_hour):
+                self.low_performance_instances[instance] = instance_info
+                continue
 
             if self.check_low_invocation_count(running_time = running_time, least_running_time = self.delete_cfg.least_running_time_1_day, \
                     invocation_count = instance_info['invocation_count_1_day'], least_invocation_count = self.delete_cfg.least_invocation_count_1_day):
@@ -92,15 +104,17 @@ class Deletion:
 
 
         try:
-            func_timeout(300, lambda: input("Enter the instances to remove (separated by spaces or commas): "))
+            user_input = func_timeout(10, lambda: input("Enter the instances to remove (separated by spaces or commas): "))
         except:
             user_input = ""
 
         for instance in user_input.split(' '):
-            print(instance)
-            selected_instance = [k for k in self.low_performance_instances if instance in k]
-            if len(selected_instance) != 0:
-                selected_instances[selected_instance] = self.low_performance_instances[selected_instance]
+            if len(instance) == 12:
+                print(instance)
+                selected_instance = next(k for k in self.low_performance_instances if instance in k)
+                print(selected_instance)
+                if len(selected_instance) != 0:
+                    selected_instances[selected_instance] = self.low_performance_instances[selected_instance]
 
         return selected_instances
 
