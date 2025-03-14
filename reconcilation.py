@@ -1,10 +1,9 @@
 import time
 
 from func_timeout import func_timeout, FunctionTimedOut
-from get_args import get_cli_args
-from get_args import Config
+from config import Config
 from remote_ssh import execute_ssh_command
-from print_table import display_instance_chutes
+from print_table import display_instance_metrics
 
 
 class Config:
@@ -18,9 +17,9 @@ class Config:
         self.least_local_chute_count = config.get('least_local_chute_count', '0')
 
 
-class Deletion:
-    def __init__(self, config, instances, primary_host, auto_delete):
-        self.instances = instances
+class Reconcilation:
+    def __init__(self, config, instances_metrics, primary_host, auto_delete):
+        self.instances_metrics = instances_metrics
         self.primary_host = primary_host
         self.config = Config(config)
         self.auto_delete = auto_delete
@@ -28,18 +27,18 @@ class Deletion:
 
     def fetch_chutes(self):
         self.chutes = {}
-        for instance, instance_info in self.instances.items():
+        for instance, instance_info in self.instances_metrics.items():
             if instance_info['chute_id'] not in self.chutes:
                 self.chutes[instance_info['chute_id']] = [instance]
             else:
                 self.chutes[instance_info['chute_id']].append(instance)
 
 
-    def fetch_low_performance_chutes(self):
+    def fetch_low_performance_instances(self):
         self.fetch_chutes()
 
         self.low_performance_instances = {}
-        for instance, instance_info in self.instances.items():
+        for instance, instance_info in self.instances_metrics.items():
             running_time = time.time() - time.mktime(time.strptime(instance_info['started_at'], "%Y-%m-%d %H:%M:%S.%f+00"))
 
             if self.check_least_chute_count(len(self.chutes[instance_info["chute_id"]]), self.delete_cfg.least_local_chute_count):
@@ -89,16 +88,14 @@ class Deletion:
     def prompt_user_input(self):
         selected_instances = {}
 
-
         try:
             func_timeout(300, lambda: input("Enter the instances to remove (separated by spaces or commas): "))
         except:
             user_input = ""
 
         for instance in user_input.split(' '):
-            print(instance)
-            selected_instance = [k for k in self.low_performance_instances if instance in k]
-            if len(selected_instance) != 0:
+            selected_instance = next(k for k in self.low_performance_instances if instance in k)
+            if len(selected_instance) == 12:
                 selected_instances[selected_instance] = self.low_performance_instances[selected_instance]
 
         return selected_instances
@@ -108,15 +105,15 @@ class Deletion:
         if self.auto_delete is False:
             return
 
-        self.fetch_low_performance_chutes()
+        self.fetch_low_performance_instances()
 
-        display_instance_chutes(self.low_performance_instances, "Low Performance Chutes", "Chute ID")
+        display_instance_metrics(self.low_performance_instances, "Low Performance Chutes", "Chute ID")
 
         if auto_delete:
             selected_instances = self.low_performance_instances
         else:
             selected_instances = self.prompt_user_input()
-            display_instance_chutes(selected_instances, "Selected low performance instances for Deletion", "Chute ID")
+            display_instance_metrics(selected_instances, "Selected low performance instances for Deletion", "Chute ID")
 
             try:
                 func_timeout(10, lambda: input("Preess Enter to confirm deletion..."))
@@ -135,10 +132,6 @@ if __name__ == '__main__':
         config = Config(args.config)
     except Exception as e:
         print(f'\33[31mFailed load config: {e}\33[0m')
-
-    delete_config = config.fetch_delete_cfg()
-    primary_host = config.primary_host()
-
 
     instance_chutes = {
         '4c4539fa-3eb0-42d1-935b-9a85d14c766a': {
@@ -162,6 +155,5 @@ if __name__ == '__main__':
             }
     }
     # run test
-    # deletion = Deletion(delete_config, instance_chutes, primary_host)
-    # auto_delete = False
-    # deletion.execute_delete_instance(auto_delete)
+    # deletion = Reconcilation(config.reconcilation(), instance_chutes, config.primary_host(), config.auto_delete())
+    # reconcilation.do()

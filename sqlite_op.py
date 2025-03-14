@@ -1,5 +1,27 @@
 from sqlite_base import *
 
+class QueryResult:
+    def __init__(self, instance_id, deployment_id, chute_id, host_ip, gpu_type, created_at, gpu_count):
+        self.instance_id = instance_id
+        self.deployment_id = deployment_id
+        self.chute_id = chute_id
+        self.host_ip = host_ip
+        self.gpu_type = gpu_type
+        self.created_at = created_at
+        self.gpu_count = gpu_count
+
+
+    def __repr__(self):
+        return (
+                f"'instance_id': '{self.instance_id}',"
+                f"'deployment_id': '{self.deployment_id}',"
+                f"'chute_id': '{self.chute_id}',"
+                f"'host_ip': '{self.host_ip}',"
+                f"'gpu_type': '{self.gpu_type}',"
+                f"'created_at': '{self.created_at}',"
+                f"'gpu_count': '{self.gpu_count}'"
+                )
+
 
 class SQLiteInstance(SQLiteBase):
     def create_table(self):
@@ -32,9 +54,12 @@ class SQLiteInstance(SQLiteBase):
         self.conn.commit()
 
     def query_active_instances(self):
-        sql = '''SELECT * FROM deployments WHERE DELETED_AT=0 or DELETED_AT IS NULL ORDER BY CREATED_AT DESC;'''
+        sql = '''SELECT instance_id, deployment_id, chute_id, host_ip, gpu_type, created_at, gpu_count \
+                FROM deployments WHERE DELETED_AT=0 or DELETED_AT IS NULL ORDER BY CREATED_AT DESC;'''
         self.cursor.execute(sql)
-        return self.cursor.fetchall()
+        rows = self.cursor.fetchall()
+        results = [QueryResult(*row) for row in rows]
+        return [QueryResult(*row) for row in rows]
 
     def instance_exists(self, instance_data):
         sql = '''SELECT COUNT(*) FROM deployments
@@ -45,8 +70,8 @@ class SQLiteInstance(SQLiteBase):
             AND GPU_TYPE = ?
         ;'''
 
-        self.cursor.execute(sql, instance_data)
-        return self.cursor.fetchall()
+        self.cursor.execute(sql, instance_data[:5])
+        return self.cursor.fetchone()[0] > 0
 
     def update_instance_deleted_at(self, instance_data):
         sql = '''UPDATE deployments SET DELETED_AT = ? WHERE INSTANCE_ID = ?;'''
