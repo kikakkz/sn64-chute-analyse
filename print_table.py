@@ -4,7 +4,7 @@ from prettytable import PrettyTable
 
 
 def display_instance_metrics(instances, title, sortby):
-    t = PrettyTable(['Host IP', 'GPU Type', 'GPU Count', 'Instace ID', 'Chute ID', 'Deployment ID', 'Running Time', 'Active', 'Compute Units 1h', 'Compute Units 1d', 'Compute Units 7d', 'Invocation Count 1h', 'Invocation Count 1d', 'Invocation Count 7d', 'Bounty Count 7d'])
+    t = PrettyTable(['Host IP', 'GPU Type', 'GPU Count', 'Model Name', 'Instace ID', 'Chute ID', 'Deployment ID', 'Running Time', 'Active', 'Compute Units 1h', 'Compute Units 1d', 'Compute Units 7d', 'Invocation Count 1h', 'Invocation Count 1d', 'Invocation Count 7d', 'Bounty Count 7d'])
     t.title = title
     instances = instances
     sortby = sortby
@@ -14,6 +14,7 @@ def display_instance_metrics(instances, title, sortby):
                 metrics["host_ip"],
                 metrics["gpu_type"],
                 metrics["gpu_count"],
+                metrics["model_name"],
                 metrics["instance_id"][-12:],
                 metrics["chute_id"][-12:],
                 metrics["deployment_id"][-12:],

@@ -35,7 +35,7 @@ class Executor:
         self.chutes_audit_host = self.config.chutes_audit_host()
 
 
-    def fetch_deployments_from_k8s(self):
+    def fetch_deployments_from_primary(self):
         pod_name = self.primary_host['pod_name']
         command = f'''
             microk8s kubectl exec -n {pod_name} -- psql -U chutes chutes -c \
@@ -52,8 +52,35 @@ class Executor:
         self.instance_db_records.extend(instances)
 
 
+    def query_model_from_primary(self, chute_id):
+        pod_name = self.primary_host['pod_name']
+        command = f'''
+            microk8s kubectl exec -n {pod_name} -- psql -U chutes chutes -c \
+            \"select code from chutes where chute_id = '{chute_id}';\" | grep -v "model_name_or_url\|username" | grep "model_name=\| name=" | awk -F \'\"\' \'{{ print $2 }}\'
+        '''
+        return execute_ssh_command(self.primary_host['host_ip'], self.primary_host['username'], command)
+
+
+    def update_chute_mode_name(self):
+        for record in self.instance_db_records:
+            chute_data = [record.chute_id]
+            if self.instance_db.chute_model_exists(chute_data) is False:
+                (err, out) = self.query_model_from_primary(record.chute_id)
+                if err != '':
+                    raise Exception(err)
+                model_name = out.splitlines()[0]
+                self.instance_db.insert_chute_model((record.chute_id, model_name))
+
+
+    def update_instances_model_name(self):
+        for instance, metric in self.instances_metrics.items():
+            chute_data = [metric['chute_id']]
+            model_name = self.instance_db.query_chute_model_name(chute_data)
+            self.instances_metrics[instance]['model_name'] = model_name
+
+
     def fetch_latest_instances(self):
-        (err, out) = self.fetch_deployments_from_k8s()
+        (err, out) = self.fetch_deployments_from_primary()
         if err != '':
             raise Exception(err)
         for latest_instance in out.splitlines():
@@ -198,6 +225,7 @@ class Executor:
 
 
     def print_instances_performance(self):
+        print(self.instances_metrics)
         t = PrettyTable(['Host IP', 'Active', 'GPU Type', 'Compute Units 1 hour', 'Compute Units 1 day', 'Compute Units 7 days'])
         hosts_metrics = {}
         for instance, instance_metrics in self.instances_metrics.items():
@@ -236,11 +264,13 @@ def main():
 
     executor.fetch_latest_instances()
     executor.query_active_instances()
+    executor.update_chute_mode_name()
 
     executor.query_latest_audit_time()
     metrics = executor.fetch_instances_metrics()
 
     executor.update_expired_instances()
+    executor.update_instances_model_name()
 
     instance_db.close_connection()
 

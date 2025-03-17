@@ -36,7 +36,14 @@ class SQLiteInstance(SQLiteBase):
             DELETED_AT CHAR(50) DEFAULT 0
         )'''
 
+        chutes_sql = '''CREATE TABLE IF NOT EXISTS chutes (
+            CHUTE_ID CHAR(50) NOT NULL,
+            MODEL_NAME CHAR(50) NOT NULL,
+            DELETED_AT CHAR(50) DEFAULT 0
+        )'''
+
         self.cursor.execute(sql)
+        self.cursor.execute(chutes_sql)
         self.conn.commit()
 
     def insert_instance(self, instance_data):
@@ -54,8 +61,10 @@ class SQLiteInstance(SQLiteBase):
         self.conn.commit()
 
     def query_active_instances(self):
-        sql = '''SELECT instance_id, deployment_id, chute_id, host_ip, gpu_type, created_at, gpu_count \
-                FROM deployments WHERE DELETED_AT=0 or DELETED_AT IS NULL ORDER BY CREATED_AT DESC;'''
+        sql = '''SELECT instance_id, deployment_id, chute_id, host_ip, gpu_type, created_at, gpu_count
+                FROM deployments
+                WHERE DELETED_AT=0 or DELETED_AT IS NULL ORDER BY CREATED_AT DESC
+        ;'''
         self.cursor.execute(sql)
         rows = self.cursor.fetchall()
         results = [QueryResult(*row) for row in rows]
@@ -69,15 +78,38 @@ class SQLiteInstance(SQLiteBase):
             AND HOST_IP = ?
             AND GPU_TYPE = ?
         ;'''
-
         self.cursor.execute(sql, instance_data[:5])
         return self.cursor.fetchone()[0] > 0
 
     def update_instance_deleted_at(self, instance_data):
-        sql = '''UPDATE deployments SET DELETED_AT = ? WHERE INSTANCE_ID = ?;'''
-
+        sql = '''UPDATE deployments SET DELETED_AT = ? 
+            WHERE INSTANCE_ID = ?
+        ;'''
         self.cursor.execute(sql, instance_data)
         self.conn.commit()
+
+    def insert_chute_model(self, chute_data):
+        sql = '''INSERT OR IGNORE INTO chutes (
+            CHUTE_ID,
+            MODEL_NAME
+            ) VALUES (?, ?);
+        '''
+        self.cursor.execute(sql, chute_data)
+        self.conn.commit()
+
+    def chute_model_exists(self, chute_data):
+        sql = '''SELECT COUNT(*) FROM chutes
+            WHERE CHUTE_ID = ?
+        ;'''
+        self.cursor.execute(sql, chute_data)
+        return self.cursor.fetchone()[0] > 0
+
+    def query_chute_model_name(self, chute_data):
+        sql = '''SELECT MODEL_NAME FROM chutes
+            WHERE CHUTE_ID = ?
+        ;'''
+        self.cursor.execute(sql, chute_data)
+        return self.cursor.fetchone()[0]
 
 
 if __name__ == "__main__":
