@@ -55,8 +55,13 @@ class Executor:
     def query_model_from_primary(self, chute_id):
         pod_name = self.primary_host['pod_name']
         command = f'''
-            microk8s kubectl exec -n {pod_name} -- psql -U chutes chutes -c \
-            \"select code from chutes where chute_id = '{chute_id}';\" | grep -v "model_name_or_url\|username" | grep "model_name=\| name=" | awk -F \'\"\' \'{{ print $2 }}\'
+            model=`microk8s kubectl exec -n chutes postgres-6b98bd55c9-p7xbf -- psql -U chutes chutes -c \
+            "select code from chutes where chute_id = '{chute_id}';" | \
+            grep -v "model_name_or_url\|username"`;model_name=`echo $model | grep "model_name=" | \
+            awk -F \'model_name=\' \'{{ print $2 }}\' | awk -F \'"\' \'{{ print $2 }}\'`; \
+            [ "x$model_name" == "x" ] && model_name=`echo $model | grep "name=" | \
+            awk -F \'name=\' \'{{ print $2 }}\' | awk -F \'"\' \'{{ print $2 }}\'`;\
+            echo $model_name
         '''
         return execute_ssh_command(self.primary_host['host_ip'], self.primary_host['username'], command)
 
@@ -226,7 +231,6 @@ class Executor:
 
 
     def print_instances_performance(self):
-        print(self.instances_metrics)
         t = PrettyTable(['Host IP', 'Active', 'GPU Type', 'Compute Units 1 hour', 'Compute Units 1 day', 'Compute Units 7 days'])
         hosts_metrics = {}
         for instance, instance_metrics in self.instances_metrics.items():

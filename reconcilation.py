@@ -95,9 +95,10 @@ class Reconcilation:
             user_input = ""
 
         for instance in user_input.split(' '):
-            selected_instance = next((k for k in self.low_performance_instances if str(instance) in k), None)
-            if len(selected_instance) > 0:
-                selected_instances[selected_instance] = self.low_performance_instances[selected_instance]
+            if len(instance) == 12:
+                selected_instance = next((k for k in self.low_performance_instances if str(instance) in k), None)
+                if selected_instance is not None:
+                    selected_instances[selected_instance] = self.low_performance_instances[selected_instance]
 
         return selected_instances
 
