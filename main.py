@@ -140,6 +140,7 @@ class Executor:
                     AND i.miner_uid = {self.miner_uid} \
                     AND i.instance_id = \'{instance_id}\' \
                     AND i.completed_at IS NOT NULL \
+                    AND NOT EXISTS (SELECT 1 FROM reports WHERE invocation_id = i.parent_invocation_id AND confirmed_at IS NOT NULL) \
                     GROUP BY i.miner_hotkey \
                     ORDER BY compute_units DESC;\" | grep {self.hotkey}'''
         (err, out) = execute_ssh_command(self.chutes_audit_host['host_ip'], self.chutes_audit_host['username'], command)

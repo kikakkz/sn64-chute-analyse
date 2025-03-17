@@ -41,20 +41,21 @@ class Reconcilation:
         for instance, instance_info in self.instances_metrics.items():
             running_time = time.time() - time.mktime(time.strptime(instance_info['started_at'], "%Y-%m-%d %H:%M:%S.%f+00"))
 
-            if self.check_least_chute_count(len(self.chutes[instance_info["chute_id"]]), self.delete_cfg.least_local_chute_count):
-                continue
-
-            self.chutes[instance_info["chute_id"]].remove(instance)
-
-            if self.check_low_compute_units(running_time = running_time, least_running_time = self.delete_cfg.least_running_time_1_day, \
-                    compute_units = instance_info['compute_units_1_day'], least_compute_units = self.delete_cfg.least_compute_units_1_day):
-                self.low_performance_instances[instance] = instance_info
+            if self.check_least_chute_count(len(self.chutes[instance_info["chute_id"]]), self.config.least_local_chute_count):
                 continue
 
 
-            if self.check_low_invocation_count(running_time = running_time, least_running_time = self.delete_cfg.least_running_time_1_day, \
-                    invocation_count = instance_info['invocation_count_1_day'], least_invocation_count = self.delete_cfg.least_invocation_count_1_day):
+            if self.check_low_compute_units(running_time = running_time, least_running_time = self.config.least_running_time_1_day, \
+                    compute_units = instance_info['1_day']['compute_units'], least_compute_units = self.config.least_compute_units_1_day):
                 self.low_performance_instances[instance] = instance_info
+                self.chutes[instance_info["chute_id"]].remove(instance)
+                continue
+
+
+            if self.check_low_invocation_count(running_time = running_time, least_running_time = self.config.least_running_time_1_day, \
+                    invocation_count = instance_info['1_day']['invocation_count'], least_invocation_count = self.config.least_invocation_count_1_day):
+                self.low_performance_instances[instance] = instance_info
+                self.chutes[instance_info["chute_id"]].remove(instance)
                 continue
 
 
@@ -66,7 +67,7 @@ class Reconcilation:
 
     def check_low_invocation_count(self, running_time, least_running_time, invocation_count, least_invocation_count):
         is_running_time_valid = running_time >= least_running_time
-        is_less_than_least_invocation_count = int(invocation_count) < int(least_invocation_count)
+        is_less_than_least_invocation_count = int(str(invocation_count).split('.')[0]) < int(least_invocation_count)
         return is_running_time_valid and is_less_than_least_invocation_count
 
 
@@ -89,27 +90,24 @@ class Reconcilation:
         selected_instances = {}
 
         try:
-            func_timeout(300, lambda: input("Enter the instances to remove (separated by spaces or commas): "))
+            user_input = func_timeout(300, lambda: input("Enter the instances to remove (separated by spaces or commas): "))
         except:
             user_input = ""
 
         for instance in user_input.split(' '):
-            selected_instance = next(k for k in self.low_performance_instances if instance in k)
-            if len(selected_instance) == 12:
+            selected_instance = next((k for k in self.low_performance_instances if str(instance) in k), None)
+            if len(selected_instance) > 0:
                 selected_instances[selected_instance] = self.low_performance_instances[selected_instance]
 
         return selected_instances
 
 
     def do(self):
-        if self.auto_delete is False:
-            return
-
         self.fetch_low_performance_instances()
 
         display_instance_metrics(self.low_performance_instances, "Low Performance Chutes", "Chute ID")
 
-        if auto_delete:
+        if self.auto_delete:
             selected_instances = self.low_performance_instances
         else:
             selected_instances = self.prompt_user_input()
