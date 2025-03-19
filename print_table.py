@@ -29,3 +29,24 @@ def display_instance_metrics(instances, title, sortby):
                 metrics['7_days']['bounty']
                 ])
     print(t.get_string(sortby=sortby))
+
+
+def display_rate_limit_chutes_metrics(chutes, title, sortby):
+    t = PrettyTable(['Chute ID', 'day 1 Rate Limit', 'day 1 Total Invocation', 'day 2 Rate Limit', 'day 2 Total Invocation', 'day 3 Rate Limit', 'day 3 Total Invocation', 'Model Name'])
+    t.title = title
+    chutes = chutes
+    sortby = sortby
+
+    for chute, metrics in chutes.items():
+        chute_data = [chute]
+        t.add_row([
+            chute,
+            metrics['day_1']['rate_limit'],
+            metrics['day_1']['total_invocation'],
+            metrics['day_2']['rate_limit'],
+            metrics['day_2']['total_invocation'],
+            metrics['day_3']['rate_limit'],
+            metrics['day_3']['total_invocation'],
+            metrics['model_name']
+            ])
+    print(t.get_string(sortby=sortby))

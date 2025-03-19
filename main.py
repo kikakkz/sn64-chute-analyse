@@ -18,6 +18,7 @@ from remote_ssh import execute_ssh_command
 from reconcilation import Reconcilation
 
 from print_table import display_instance_metrics
+from print_table import display_rate_limit_chutes_metrics
 from sqlite_op import SQLiteInstance
 from prettytable import PrettyTable
 
@@ -33,6 +34,8 @@ class Executor:
         self.instances_metrics = {}
         self.primary_host = self.config.primary_host()
         self.chutes_audit_host = self.config.chutes_audit_host()
+        self.rate_limit_chute_list = []
+        self.chutes_metrics = {}
 
 
     def fetch_deployments_from_primary(self):
@@ -66,15 +69,24 @@ class Executor:
         return execute_ssh_command(self.primary_host['host_ip'], self.primary_host['username'], command)
 
 
-    def update_chute_mode_name(self):
-        for record in self.instance_db_records:
-            chute_data = [record.chute_id]
+    def update_chute_model_name(self, chute_id):
+            chute_data = [chute_id]
             if self.instance_db.chute_model_exists(chute_data) is False:
-                (err, out) = self.query_model_from_primary(record.chute_id)
+                (err, out) = self.query_model_from_primary(chute_id)
                 if err != '':
                     raise Exception(err)
                 model_name = out.splitlines()[0]
-                self.instance_db.insert_chute_model((record.chute_id, model_name))
+                self.instance_db.insert_chute_model((chute_id, model_name))
+
+
+    def update_instances_chute_mode_name(self):
+        for record in self.instance_db_records:
+            self.update_chute_model_name(record.chute_id)
+
+
+    def update_rate_limit_chute_mode_name(self):
+        for chute_id in self.chutes_metrics:
+            self.update_chute_model_name(chute_id)
 
 
     def update_instances_model_name(self):
@@ -123,7 +135,8 @@ class Executor:
             (ORDER BY extract(epoch from completed_at - started_at) / (metrics->>\'steps\')::float) as median_step_time, \
             percentile_cont(0.5) WITHIN GROUP (ORDER BY extract(epoch from completed_at - started_at) / ((metrics->>\'it\')::float + (metrics->>\'ot\')::float)) as median_token_time \
             FROM invocations \
-            WHERE ((metrics->>\'steps\' IS NOT NULL and (metrics->>\'steps\')::float > 0) \
+            WHERE ((metrics->>\'steps\' IS NOT NULL \
+                AND (metrics->>\'steps\')::float > 0) \
                 OR (metrics->>\'it\' IS NOT NULL AND metrics->>\'ot\' IS NOT NULL \
                 AND (metrics->>\'ot\')::float > 0 \
                 AND (metrics->>\'it\')::float > 0)) \
@@ -258,6 +271,86 @@ class Executor:
         display_instance_metrics(self.instances_metrics, "Active Instances", "Active")
 
 
+    def fetch_rate_limit_model_list(self):
+        pod_name = self.chutes_audit_host['pod_name']
+        command = f'sudo docker exec {pod_name} psql -U user chutes_audit -c \"SELECT DISTINCT chute_id FROM invocations \
+                WHERE error_message = \'RATE_LIMIT\' \
+                AND started_at >= NOW() - INTERVAL \'3 days\';\" | grep \'-\' | grep -v \'\\-\\-\''
+        (err, out) = execute_ssh_command(self.chutes_audit_host['host_ip'], self.chutes_audit_host['username'], command)
+        if err != "":
+            raise Exception(err)
+        self.rate_limit_chute_list = [ chute.strip() for chute in out.splitlines()]
+
+
+    def fetch_chute_rate_limit_count(self, chute_id, start, end):
+        pod_name = self.chutes_audit_host['pod_name']
+        command = f'sudo docker exec {pod_name} psql -U user chutes_audit -c \"SELECT COUNT(*) FROM invocations \
+                WHERE error_message = \'RATE_LIMIT\' \
+                AND started_at >= NOW() - INTERVAL \'{end}\' \
+                AND started_at <= NOW() - INTERVAL \'{start}\' \
+                AND chute_id = \'{chute_id}\';\"'
+        (err, out) = execute_ssh_command(self.chutes_audit_host['host_ip'], self.chutes_audit_host['username'], command)
+        if err != "":
+            raise Exception(err)
+        return(out.splitlines()[2].strip())
+
+
+    def fetch_chute_count(self, chute_id, start, end):
+        pod_name = self.chutes_audit_host['pod_name']
+        command = f'sudo docker exec {pod_name} psql -U user chutes_audit -c \"SELECT COUNT(*) FROM invocations \
+                WHERE started_at >= NOW() - INTERVAL \'{end}\' \
+                AND started_at <= NOW() - INTERVAL \'{start}\' \
+                AND chute_id = \'{chute_id}\';\"'
+        (err, out) = execute_ssh_command(self.chutes_audit_host['host_ip'], self.chutes_audit_host['username'], command)
+        if err != "":
+            raise Exception(err)
+        return(out.splitlines()[2].strip())
+
+
+    def fetch_rate_limit_chute_metris(self, chute_id):
+        if self.chutes_metrics.get(chute_id) is None:
+            day_1_rate_limit = self.fetch_chute_rate_limit_count(chute_id, '0 day', '1 day')
+            day_1_total_invocation = self.fetch_chute_count(chute_id, '0 day', '1 day')
+            day_2_rate_limit = self.fetch_chute_rate_limit_count(chute_id, '1 day', '2 days')
+            day_2_total_invocation = self.fetch_chute_count(chute_id, '1 day', '2 days')
+            day_3_rate_limit = self.fetch_chute_rate_limit_count(chute_id, '2 days', '3 days')
+            day_3_total_invocation = self.fetch_chute_count(chute_id, '2 day', '3 days')
+
+            self.chutes_metrics[chute_id] = {
+                'day_1': {
+                    'rate_limit': day_1_rate_limit,
+                    'total_invocation': day_1_total_invocation
+                },
+                'day_2': {
+                    'rate_limit': day_2_rate_limit,
+                    'total_invocation': day_2_total_invocation
+                },
+                'day_3': {
+                    'rate_limit': day_3_rate_limit,
+                    'total_invocation': day_3_total_invocation
+                }
+            }
+
+
+    def fetch_rate_limit_chutes_metris(self):
+        self.fetch_rate_limit_model_list()
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
+            futures = {executor.submit(self.fetch_rate_limit_chute_metris, chute_id): chute_id for chute_id in self.rate_limit_chute_list}
+            concurrent.futures.wait(futures, return_when=concurrent.futures.ALL_COMPLETED)
+
+        self.update_rate_limit_chute_mode_name()
+
+        for chute_id in self.chutes_metrics:
+            chute_data = [chute_id]
+            model_name = self.instance_db.query_chute_model_name(chute_data)
+            self.chutes_metrics[chute_id]['model_name'] = model_name
+
+
+    def print_rate_limit_chutes(self):
+        display_rate_limit_chutes_metrics(self.chutes_metrics, 'Rate Limit Chute', 'day 1 Rate Limit')
+
+
 def main():
     config = Config()
 
@@ -267,9 +360,11 @@ def main():
 
     executor = Executor(config, instance_db)
 
+    executor.fetch_rate_limit_chutes_metris()
+
     executor.fetch_latest_instances()
     executor.query_active_instances()
-    executor.update_chute_mode_name()
+    executor.update_instances_chute_mode_name()
 
     executor.query_latest_audit_time()
     metrics = executor.fetch_instances_metrics()
@@ -281,6 +376,7 @@ def main():
 
     executor.print_instances_performance()
     executor.print_instances_detail_performance()
+    executor.print_rate_limit_chutes()
 
     primary_host = config.primary_host()
 
